@@ -8,9 +8,22 @@ from flask import Flask, render_template_string
 import socket
 import os
 from datetime import datetime
-from database import get_connection, ph
+from database import get_connection, ph, create_database, add_sample_doctors
 
 app = Flask(__name__)
+
+
+# ============================================
+# Database Initialize (Render pe pehli baar chalane ke liye)
+# ============================================
+
+try:
+    print("🚀 Database initialize ho raha hai...")
+    create_database()
+    add_sample_doctors()
+    print("✅ Database ready!")
+except Exception as e:
+    print(f"⚠️ Database init error: {e}")
 
 
 # ============================================
