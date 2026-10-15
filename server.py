@@ -16,7 +16,43 @@ from database import (get_connection, ph, create_database,
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "doctor-live-secret-key-2024")
+# ============================================
+# AUTO MIGRATION (Render pe pehli baar chalane ke liye)
+# ============================================
 
+def auto_migrate():
+    """Purane database mein naye columns add karta hai"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # token column check
+        try:
+            cursor.execute("SELECT token FROM doctors LIMIT 1")
+        except Exception:
+            cursor.execute("ALTER TABLE doctors ADD COLUMN token TEXT")
+            print("✅ token column added")
+        
+        # hospital_lat
+        try:
+            cursor.execute("SELECT hospital_lat FROM doctors LIMIT 1")
+        except Exception:
+            cursor.execute("ALTER TABLE doctors ADD COLUMN hospital_lat REAL")
+            print("✅ hospital_lat added")
+        
+        # hospital_lng
+        try:
+            cursor.execute("SELECT hospital_lng FROM doctors LIMIT 1")
+        except Exception:
+            cursor.execute("ALTER TABLE doctors ADD COLUMN hospital_lng REAL")
+            print("✅ hospital_lng added")
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ Migration error: {e}")
+
+auto_migrate()
 
 # ============================================
 # Initialize Database
