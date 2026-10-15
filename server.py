@@ -17,43 +17,57 @@ from database import (get_connection, ph, create_database,
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "doctor-live-secret-key-2024")
 # ============================================
-# AUTO MIGRATION (Render pe pehli baar chalane ke liye)
+# AUTO MIGRATION (Render ke purane database ke liye)
 # ============================================
 
 def auto_migrate():
     """Purane database mein naye columns add karta hai"""
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # token column check
+    
+    columns_to_add = [
+        ("token", "TEXT"),
+        ("hospital_lat", "REAL"),
+        ("hospital_lng", "REAL"),
+    ]
+    
+    for col_name, col_type in columns_to_add:
         try:
-            cursor.execute("SELECT token FROM doctors LIMIT 1")
-        except Exception:
-            cursor.execute("ALTER TABLE doctors ADD COLUMN token TEXT")
-            print("✅ token column added")
-        
-        # hospital_lat
-        try:
-            cursor.execute("SELECT hospital_lat FROM doctors LIMIT 1")
-        except Exception:
-            cursor.execute("ALTER TABLE doctors ADD COLUMN hospital_lat REAL")
-            print("✅ hospital_lat added")
-        
-        # hospital_lng
-        try:
-            cursor.execute("SELECT hospital_lng FROM doctors LIMIT 1")
-        except Exception:
-            cursor.execute("ALTER TABLE doctors ADD COLUMN hospital_lng REAL")
-            print("✅ hospital_lng added")
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"⚠️ Migration error: {e}")
+            # Fresh connection har baar (transaction abort se bachne ke liye)
+            conn = get_connection()
+            cursor = conn.cursor()
+            
+            # Check karo column hai ya nahi
+            try:
+                cursor.execute(f"SELECT {col_name} FROM doctors LIMIT 1")
+                conn.close()
+                print(f"✅ {col_name} already exists")
+                continue
+            except Exception:
+                # Column nahi hai - transaction reset karo
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                
+                # Naya connection banao - ALTER TABLE ke liye
+                conn.close()
+                conn = get_connection()
+                cursor = conn.cursor()
+                
+                # Ab column add karo
+                cursor.execute(f"ALTER TABLE doctors ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+                conn.close()
+                print(f"✅ {col_name} column added")
+                
+        except Exception as e:
+            print(f"⚠️ Error adding {col_name}: {e}")
+            try:
+                conn.close()
+            except:
+                pass
 
 auto_migrate()
-
+                           
 # ============================================
 # Initialize Database
 # ============================================
