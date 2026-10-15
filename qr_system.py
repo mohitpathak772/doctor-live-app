@@ -1,24 +1,17 @@
 # ============================================
 # qr_system.py
-# QR Code generate + scan
-# SQLite (local) + PostgreSQL (cloud) dono support
+# QR Code generate (GPS coordinates ke saath)
 # ============================================
 
 import qrcode
 import os
 import socket
-from datetime import datetime
 from database import get_connection, ph
 
 QR_FOLDER = "qr_codes"
 
 
-# ============================================
-# Helper Functions
-# ============================================
-
 def get_local_ip():
-    """PC ka local IP nikalta hai"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -30,7 +23,6 @@ def get_local_ip():
 
 
 def get_base_url():
-    """Server ka base URL deta hai (Render ya local)"""
     render_url = os.environ.get("RENDER_EXTERNAL_URL")
     if render_url:
         return render_url
@@ -38,21 +30,16 @@ def get_base_url():
 
 
 def ensure_qr_folder():
-    """QR folder banata hai (agar nahi hai)"""
     if not os.path.exists(QR_FOLDER):
         os.makedirs(QR_FOLDER)
 
 
-# ============================================
-# QR Generate
-# ============================================
-
-def generate_qr_for_doctor(doctor_id, doctor_name):
-    """Doctor ke liye QR banata hai (URL ke saath)"""
+def generate_qr_for_doctor(doctor_id, doctor_name, doctor_token):
+    """Doctor ke liye QR banata hai - token ke saath"""
     ensure_qr_folder()
     
     base_url = get_base_url()
-    qr_data = f"{base_url}/doctor/{doctor_id}"
+    qr_data = f"{base_url}/doctor/{doctor_id}?token={doctor_token}"
     
     qr = qrcode.QRCode(
         version=1,
@@ -70,15 +57,14 @@ def generate_qr_for_doctor(doctor_id, doctor_name):
     img.save(file_path)
     
     print(f"✅ QR: {file_path}")
-    print(f"   📱 URL: {qr_data}")
+    print(f"   🔐 Token: {doctor_token[:10]}...")
     return file_path
 
 
 def generate_qr_for_all_doctors():
-    """Saare doctors ke QR banata hai"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM doctors ORDER BY id")
+    cursor.execute("SELECT id, name, token FROM doctors ORDER BY id")
     doctors = cursor.fetchall()
     conn.close()
     
@@ -86,99 +72,19 @@ def generate_qr_for_all_doctors():
         print("❌ Koi doctor nahi mila.")
         return
     
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("📸 QR CODES GENERATE HO RAHE HAIN")
     print(f"🌐 Base URL: {get_base_url()}")
-    print("=" * 60 + "\n")
+    print("=" * 70 + "\n")
     
-    for doc_id, name in doctors:
-        generate_qr_for_doctor(doc_id, name)
+    for doc_id, name, token in doctors:
+        if not token:
+            print(f"⚠️  Doctor {doc_id} ({name}) ka token nahi hai.")
+            continue
+        generate_qr_for_doctor(doc_id, name, token)
     
     print(f"\n✅ Saare QR codes '{QR_FOLDER}' mein save ho gaye!")
 
 
-# ============================================
-# Scan / Status Update
-# ============================================
-
-def scan_qr(qr_data):
-    """QR data se doctor ID nikaal kar present karta hai"""
-    
-    # URL se ID nikaalo
-    if "/doctor/" in qr_data:
-        try:
-            doctor_id = int(qr_data.split("/doctor/")[-1].split("/")[0].split("?")[0])
-        except ValueError:
-            return False, "❌ QR data mein gadbad hai!"
-    elif qr_data.startswith("DOCTOR-"):
-        try:
-            doctor_id = int(qr_data.replace("DOCTOR-", ""))
-        except ValueError:
-            return False, "❌ QR data mein gadbad hai!"
-    elif qr_data.isdigit():
-        doctor_id = int(qr_data)
-    else:
-        return False, "❌ Ye valid Doctor QR nahi hai!"
-    
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        f"SELECT name, hospital_name FROM doctors WHERE id = {ph()}",
-        (doctor_id,)
-    )
-    result = cursor.fetchone()
-    
-    if not result:
-        conn.close()
-        return False, f"❌ Doctor ID {doctor_id} nahi mila!"
-    
-    doctor_name, hospital = result
-    
-    cursor.execute(
-        f"UPDATE doctors SET is_present = 1 WHERE id = {ph()}",
-        (doctor_id,)
-    )
-    conn.commit()
-    conn.close()
-    
-    current_time = datetime.now().strftime("%I:%M %p")
-    message = f"✅ {doctor_name} ab PRESENT hain ({current_time})"
-    print(message)
-    return True, message
-
-
-def mark_absent(doctor_id):
-    """Doctor ko absent karta hai"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        f"SELECT name FROM doctors WHERE id = {ph()}",
-        (doctor_id,)
-    )
-    result = cursor.fetchone()
-    
-    if not result:
-        conn.close()
-        return False, "❌ Doctor nahi mila!"
-    
-    doctor_name = result[0]
-    cursor.execute(
-        f"UPDATE doctors SET is_present = 0 WHERE id = {ph()}",
-        (doctor_id,)
-    )
-    conn.commit()
-    conn.close()
-    
-    message = f"🔴 {doctor_name} ab ABSENT hain"
-    print(message)
-    return True, message
-
-
-# ============================================
-# Testing
-# ============================================
-
 if __name__ == "__main__":
-    print("🎯 QR System Test\n")
     generate_qr_for_all_doctors()
-    print("\n✅ Test complete!")
